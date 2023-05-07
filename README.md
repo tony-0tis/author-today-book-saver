@@ -1,6 +1,6 @@
 # author-today-book-saver
 
-## Depences
+## Dependencies
 Node.js version >= v12.20.0
 
 ## Download

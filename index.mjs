@@ -6,39 +6,15 @@ import {writeFileSync} from 'fs';
 import {exec as ex} from 'child_process';
 import {promisify} from 'util';
 import {join} from 'path';
-const exec = promisify(ex);
 import {createInterface} from 'readline';
+import waterfallTasks from 'waterfall-tasks';
+
+const exec = promisify(ex);
 const readline = createInterface({
   input: process.stdin,
   output: process.stdout
 });
 
-class waterfallTasks {
-  constructor(tasks, callBack){
-    this.init(tasks, callBack);
-  }
-  async init(tasks, callBack){
-    let data = [];
-    for(let task of tasks){
-      [...data] = await new Promise(resolve=>{
-        try{
-          task((...array)=>{
-            resolve([...array])
-          }, ...data);
-        }catch(e){
-          resolve([e]);
-        }
-      });
-
-      const err = data.splice(0, 1)[0];
-      if(err){
-        console.error(err);
-        break;
-      }
-    }
-    if(typeof callBack === 'function') callBack(data);
-  }
-}
 class authorTodayBookSaver {
   browser = null;
   browserPage = null;
@@ -53,18 +29,22 @@ class authorTodayBookSaver {
   }
 
   async init(url, headless=true, cookies){
-    this.browser = await puppeteer.launch({headless});
+    this.browser = await puppeteer.launch({headless: headless? 'new' : false});
     //crete new page
     this.page = await this.browser.newPage();
     // Set screen size
     await this.page.setViewport({width: 1080, height: 1024});
     if(cookies) {
-      cookies = cookies.split(';').reduce((r, str)=>{
-        let [key, val] = str.split('=');
-        r[String(key).trim()] = String(val).trim();
-        return r;
+      cookies = cookies.split(';').map(str=>{
+        const [name, value] = str.split('=');
+
+        return {
+          name: name.trim(),
+          value: value.trim(),
+          domain: 'author.today'
+        };
       }, {});
-      await this.page.setCookie(cookies);
+      await this.page.setCookie(...cookies);
     }
 
     return await this._obtainBookInfo(url);
@@ -143,7 +123,7 @@ class authorTodayBookSaver {
       </body>
     </html>`;
 
-    const fileToSave = this.book.author + ' - ' + this.book.name;
+    const fileToSave = (this.book.author + ' - ' + this.book.name).replace(/:/g, ' -');
     try{
       console.log('>>> save book to', join(pathToSave, fileToSave + '.html'));
       writeFileSync(join(pathToSave, fileToSave + '.html'), pretty(html));
@@ -152,6 +132,7 @@ class authorTodayBookSaver {
     }
   }
   async convert(calibreConverter){
+    const fileToSave = (this.book.author + ' - ' + this.book.name).replace(/:/g, ' -');
     const {stdout, stderr} = await exec(`${calibreConverter} "${fileToSave}.html" "${fileToSave}.fb2"`);
     console.error('stderr:', stderr.toString());
     console.log('stdout:', stdout.toString());
@@ -159,7 +140,7 @@ class authorTodayBookSaver {
 }
 
 const authorToday = new authorTodayBookSaver();
-new waterfallTasks([
+waterfallTasks([
   cb=>{
     readline.question('# Start the browser in windowless mode? y|n (default: y): ', answer=>{
       cb(null, answer.toLowerCase() !== 'n');
